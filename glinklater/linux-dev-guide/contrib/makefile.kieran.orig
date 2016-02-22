@@ -1,0 +1,37 @@
+
+path = ~/Work/interfacing-2/Software/Linux/avr8-gnu-toolchain-linux_x86
+
+all: makehex
+
+makehex: elfFile.elf
+	$(path)/bin/./avr-objcopy -R .eeprom -R .fuse -R .lock -R .signature -O ihex elfFile.elf hexFile.hex
+
+elfFile.elf: main.o  menu.o thor.o nokia_lcd.o twi.o clksys_driver.o spi.o 
+	$(path)/bin/./avr-g++ -L $(path)/lib -o elfFile.elf main.o menu.o thor.o nokia_lcd.o twi.o spi.o clksys_driver.o -mmcu=atxmega128a4u
+
+main.o: main.c 
+	$(path)/bin/./avr-gcc -Wall -mmcu=atxmega128a4u -DF_CPU=2000000UL -I $(path)/include -c main.c -o main.o -w
+
+menu.o: menu.c 
+	$(path)/bin/./avr-gcc -Wall -mmcu=atxmega128a4u -DF_CPU=2000000UL -I $(path)/include -c menu.c -o menu.o -w
+
+thor.o: thor.c 
+	$(path)/bin/./avr-gcc -Wall -mmcu=atxmega128a4u -DF_CPU=2000000UL -I $(path)/include -c thor.c -o thor.o -w
+
+nokia_lcd.o: nokia_lcd.c 
+	$(path)/bin/./avr-gcc -Wall -mmcu=atxmega128a4u -DF_CPU=2000000UL -I $(path)/include -c nokia_lcd.c -o nokia_lcd.o -w
+
+twi.o: twi.c 
+	$(path)/bin/./avr-gcc -Wall -mmcu=atxmega128a4u -DF_CPU=2000000UL -I $(path)/include -c twi.c -o twi.o -w
+
+clksys_driver.o: clksys_driver.c 
+	$(path)/bin/./avr-gcc -Wall -mmcu=atxmega128a4u -DF_CPU=2000000UL -I $(path)/include -c clksys_driver.c -o clksys_driver.o -w
+
+spi.o: spi.c 
+	$(path)/bin/./avr-gcc -Wall -mmcu=atxmega128a4u -DF_CPU=2000000UL -I $(path)/include -c spi.c -o spi.o -w
+
+clean:
+	rm -f *.elf *.hex *.o
+
+upload:
+	dfu-programmer atxmega128a4u erase && dfu-programmer atxmega128a4u flash hexFile.hex && dfu-programmer atxmega128a4u reset
