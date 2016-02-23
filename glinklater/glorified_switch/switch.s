@@ -57,11 +57,9 @@ INT0_ISR:
 	mov TMP1, COUNT
 	out PORTB, TMP1
 
-	clr TMP1
-	out GICR, TMP1
 	rcall DELAY
-	ldi TMP1, 0xc0
-	out GICR, TMP1
+	ldi TMP1, 0x40
+	out GIFR, TMP1
 
 	pop TMP1
 	out SREG, TMP1
@@ -77,11 +75,9 @@ INT1_ISR:
 	mov TMP1, COUNT
 	out PORTB, TMP1
 
-	clr TMP1
-	out GICR, TMP1
 	rcall DELAY
-	ldi TMP1, 0xc0
-	out GICR, TMP1
+	ldi TMP1, 0x80
+	out GIFR, TMP1
 
 	pop TMP1
 	out SREG, TMP1
@@ -90,7 +86,7 @@ INT1_ISR:
 
 DELAY:	ser TMP1
 DEL1:	ser TMP2
-DEL2:	ldi TMP3, 20
+DEL2:	ldi TMP3, 5
 DEL3:	dec TMP3
 	brne DEL3
 	dec TMP2
