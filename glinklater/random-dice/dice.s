@@ -71,14 +71,16 @@ INT1_ISR:
 	; read timer bytes and display
 	in TMP2, TCNT1L
 	in TMP1, TCNT1H
+	cbr TMP1, 7
 
 MOD:
 	cp TMP1, DIV
-	brlo MOD_EXIT
+	brlt MOD_EXIT
 	sub TMP1, DIV
 	rjmp MOD
 
 MOD_EXIT:
+	inc TMP1
 	out PORTB, TMP1
 
 	pop TMP1
