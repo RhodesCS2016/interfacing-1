@@ -35,7 +35,9 @@ MESSAGES:
 
 .cseg
 .org $000
-rjmp START
+jmp START
+.org ADCCaddr
+jmp ADC_ISR						; adc read interrupt
 .org URXCaddr
 jmp URXC_ISR					; rx interrupt
 .org UDREaddr
@@ -54,11 +56,9 @@ UTXC_ISR:
 	cpi TMP1, 0x00
 	breq MENU_FINISHED
 	out UDR, TMP1
-	out PORTA, TMP1
 	RESTORE_REG
 	reti
 MENU_FINISHED:
-	out PORTA, FULL
 	sbi UCSRB, RXCIE ; reenable rx
 	cbi UCSRB, TXCIE ; disable tx
 	RESTORE_REG
@@ -68,7 +68,6 @@ URXC_ISR:
 	STORE_REG
 	clr TMP1
 	in TMP1, UDR
-	out PORTA, TMP1 ; debug
 
 	cpi TMP1, '.'
 	breq EXE_COMMAND
@@ -83,6 +82,26 @@ RX_END:
 	RESTORE_REG
 	reti
 
+ADC_ISR:									; This should work; I have no idea why it isn't...
+	STORE_REG
+	in TMP1, ADCH
+	lsr TMP1								; remove 3 least significant bits
+	lsr TMP1
+	lsr TMP1
+	mov TMP2, TMP1					; shift one back so that it starts at pin 1 of port a
+	lsl TMP1
+	out PORTA, TMP1					; Show ADC conversion value
+PWM_DELAY:
+	dec TMP2
+	cpi TMP2, 0x00
+	breq PWM_DONE
+	call Delay 							; uncomment for PWM delay
+	rjmp PWM_DELAY
+PWM_DONE:
+	out PORTA, ZERO
+	RESTORE_REG
+	reti
+
 EXE_TASK_1:
 	call STEP_CLOCK
 	jmp END_COMMAND
@@ -92,9 +111,9 @@ EXE_TASK_2:
 	jmp END_COMMAND
 
 EXE_TASK_3:
-	ldi TMP1, 100
+	ldi TMP1, 100								; 200 steps in 360 deg.
 C_180_LOOP:
-	ldi TMP2, 10
+	ldi TMP2, 10 								; 10ms delay
 C_DELAY_START:
 	call Delay
 	dec TMP2
@@ -107,30 +126,18 @@ C_DELAY_DONE:
 	breq DONE_180
 	rjmp C_180_LOOP
 
-EXE_TASK_4:
-	ldi TMP1, 100
-A_180_LOOP:
-	ldi TMP2, 10
-A_DELAY_START:
-	call Delay
-	dec TMP2
-	breq A_DELAY_DONE
-	rjmp A_DELAY_START
-A_DELAY_DONE:
-	call STEP_ANTI
-	dec TMP1
-	cpi TMP1, 0x00
-	breq DONE_180
-	rjmp A_180_LOOP
-
-DONE_180:
-	out PORTA, ZERO
-	call SEND_MENU
+EXE_TASK_5:
+	cbi DDRD, 4									; turns out this uses less program space 
+	cbi DDRD, 5									; and cycles than reading in from DDRD
+	cbi DDRD, 6									; and masking it.
+	cbi DDRD, 7
 	rjmp END_COMMAND
 
-EXE_COMMAND:
+EXE_COMMAND:									; switch statement
 	cpi CMD2, 0xFF
-	breq EXE_COMMAND_1
+	breq EXE_COMMAND_1					; is CMD2 unused?
+	cpi CMD1, '1'
+	brne END_COMMAND						; invalid request
 	cpi CMD2, '0'
 	breq EXE_TASK_10
 	cpi CMD2, '1'
@@ -158,16 +165,29 @@ EXE_COMMAND_1:
 	breq EXE_TASK_9
 
 END_COMMAND:
-	ser CMD1
+	ser CMD1 										; Clear commands
 	ser CMD2
 	RESTORE_REG
 	reti
 
-EXE_TASK_5:
-	cbi DDRD, 4
-	cbi DDRD, 5
-	cbi DDRD, 6
-	cbi DDRD, 7
+EXE_TASK_4:
+	ldi TMP1, 100
+A_180_LOOP:
+	ldi TMP2, 10
+A_DELAY_START:
+	call Delay
+	dec TMP2
+	breq A_DELAY_DONE
+	rjmp A_DELAY_START
+A_DELAY_DONE:
+	call STEP_ANTI
+	dec TMP1
+	cpi TMP1, 0x00
+	breq DONE_180
+	rjmp A_180_LOOP
+
+DONE_180:
+	call SEND_MENU
 	rjmp END_COMMAND
 
 EXE_TASK_6:
@@ -175,20 +195,27 @@ EXE_TASK_6:
 	rjmp END_COMMAND
 
 EXE_TASK_7:
+	out ADCSR, FULL
+	jmp END_COMMAND
+
 EXE_TASK_8:
+	out ADCSR, ZERO
+	out PORTA, ZERO
+	jmp END_COMMAND
+
 EXE_TASK_9:
 	call PRINT_THIRD_MESSAGE
 	call SEND_MENU
 	jmp END_COMMAND
 
 EXE_TASK_10:
-	ldi TMP1, 0x01
+	ldi TMP1, 0x01 										; LCD clear command
 	call Write_instruc
 	jmp END_COMMAND
 
 EXE_TASK_11:
 	ldi TMP1, 0x08
-	out WDTCR, TMP1
+	out WDTCR, TMP1										; Watchdog timer
 	jmp END_COMMAND
 
 START:
@@ -199,9 +226,6 @@ START:
 
 	clr ZERO
 	ser FULL
-
-	out DDRA, FULL ; debug
-	out PORTA, ZERO
 
 	call INIT
 	sei
@@ -214,11 +238,9 @@ INIT:
 	rcall INIT_UART
 	call INIT_LOOKUP_TABLE
 	call MY_INIT_LCD
-	; call Init_LCD
-	; call PRINT_THIRD_MESSAGE
 	call INIT_STEPPER
+	call INIT_ADC
 	call SEND_MENU
-
 	ret
 
 INIT_UART:
@@ -249,7 +271,7 @@ MY_INIT_LCD:
 
 INIT_STEPPER:
 	STORE_REG
-	ldi STEPPER_MASK, 0x10
+	ldi STEPPER_MASK, 0x10  ; initial pos for stepper motor.
 	in TMP1, DDRD 
 	in TMP2, PORTD
 	andi TMP1, DDRD
@@ -261,14 +283,21 @@ INIT_STEPPER:
 	RESTORE_REG
 	ret
 
+INIT_ADC:
+	ldi TMP3, 0xFE					; all but pin 0 (needs to be input for ADC)
+	out DDRA, TMP3					; IO pins
+	ldi TMP3, 0x60
+	out ADMUX, TMP1
+	out ADCSR, ZERO
+	ret
+
 READ_MESSAGES:
 	cpi MESG_COUNT, 3				; have we gotten 3 messages?
 	breq FINISHED_LOOKUP
 	
 	ldi TMP1, 20
 	mul TMP1, MESG_COUNT
-	mov TMP1, R0
-	out PORTA, TMP1					; calculate memory offset
+	mov TMP1, R0 						; calculate memory offset
 
 	ldi YL, low(RAM_MESSAGES)
 	ldi YH,	high(RAM_MESSAGES)
@@ -302,16 +331,16 @@ STEP_CLOCK:
 	breq STEPPER_RESET_C
 	rjmp STEPPER_OUT
 STEPPER_RESET_C:
-	ldi STEPPER_MASK, 0x10
+	ldi STEPPER_MASK, 0x10 						; loop back after bit falling off the end
 	rjmp STEPPER_OUT
 
 STEP_ANTI:
 	lsr STEPPER_MASK
-	cpi STEPPER_MASK, 0x08
+	cpi STEPPER_MASK, 0x08            
 	breq STEPPER_RESET_A
 	rjmp STEPPER_OUT
 STEPPER_RESET_A:
-	ldi STEPPER_MASK, 0x80
+	ldi STEPPER_MASK, 0x80            ; loop back after bit falling off the other end
 	rjmp STEPPER_OUT
 
 STEPPER_OUT:
@@ -331,7 +360,6 @@ SEND_MENU:
 	lpm TMP1, Z+
 	cbi UCSRB, RXCIE ; disable reception
 	sbi UCSRB, TXCIE ; disable reception
-	out PORTA, TMP1
 	out UDR, TMP1 ; tx first char
 	RESTORE_REG
 	ret
